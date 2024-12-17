@@ -95,7 +95,7 @@ data:
 
 [2] The percentage complete of the ongoing rebalance in the range [0-100]%
 
-[3] The “non-verbose” JSON payload from [/kafkacruisecontrol/state?substates=executor](#executor-state) endpoint.
+[3] The “non-verbose” JSON payload from [/kafkacruisecontrol/state?substates=executor](https://github.com/linkedin/cruise-control/wiki/REST-APIs#query-the-state-of-cruise-control) endpoint.
 
 ### Field values per `KafkaRebalance` State
 
@@ -112,49 +112,73 @@ All the information required for estimating the values of `estimatedTimeToComple
 However, the actual formula used to produce values for these fields depends on the state of the `KafkaRebalance` resource.
 Checkout the example in the [Executor State](#executorState) section to see where the fields used in the formulas below come from.
 
-#### estimatedTimeToCompletion
+#### Field: `estimatedTimeToCompletion`
+
+The estimated time it will take a rebalance to complete based on the average rate of data transfer.
+
+The formulas used to calculate field value per `KafkaRebalance` state:
  
-##### Rebalancing
+##### State: `Rebalancing`
 
 $$
-\text{rate} = \frac{\text{finishedDataMovement}}{\text{taskTriggerTime}^{[1]} - \text{currentTime}}
+\text{rate} = \frac{\text{finishedDataMovement}\_{[1]}}{\text{taskTriggerTime}\_{[2]} - \text{currentTime}}
 $$
 
 $$
-\text{estimatedTimeToCompletion} = \frac{\text{totalDataToMove} - \text{finishedDataMovement}}{\text{rate}}
+\text{estimatedTimeToCompletion} = \frac{\text{totalDataToMove}\_{[3]} - \text{finishedDataMovement}\_{\[1\]}}{\text{rate}}
 $$
 
-[1] `taskTriggerTime` is the time when the rebalance task was started, extracted from `triggeredTaskReason` field from the [Executor State](#executorState) for that task.
+[1] `finishedDataMovement` is the number of megabytes already moved by rebalance, provided by [/kafkacruisecontrol/state?substates=executor](#field-executorstate) REST API endpoint.
 
-##### Stopped
+[2] `taskTriggerTime` is the time when the rebalance task was started, extracted from `triggeredTaskReason` field from the [/kafkacruisecontrol/state?substates=executor](#field-executorstate) for that task.
 
-Once a rebalance has been stopped, it cannot be resumed. 
-Therefore, there is no `estimatedTimeToCompletion` for a stopped rebalance, so we set the field to `N/A` to emphasize this. 
-To move from the `Stopped` state, a user must refresh the `KafkaRebalance` resource, the `rebalanceProgressConfigMap` will then be updated with the next state change.
+[3] `totalDataMovement` is the total number of megabytes planned to be moved for rebalance, provided from json payload of the [/kafkacruisecontrol/state?substates=executor](#field-executorstate) REST API endpoint.
+
+
+##### State: `Stopped`
 
 $$
 \text{estimatedTimeToCompletion} = \text{N/A}
 $$
 
-#### percentageDataMovementComplete
+Once a rebalance has been stopped, it cannot be resumed. 
+Therefore, there is no `estimatedTimeToCompletion` for a stopped rebalance. We set the field to `N/A` to emphasize this. 
+To move from the `Stopped` state, a user must refresh the `KafkaRebalance` resource, the `rebalanceProgressConfigMap` will then be updated by the operator upon the next state change.
 
-##### Rebalancing
+
+#### Field: `percentageDataMovementComplete`
+
+The percentage of the data movement of the partition rebalance that is completed.
+
+The formulas used to calculate field value per  `KafkaRebalance` state:
+
+##### State: `Rebalancing`
 
 $$
-\text{percentageDataMovementComplete} = (\frac{\text{finishedDataMovement}}{\text{totalDataToMoveMB}} \times 100)\text{%}
+\text{percentageDataMovementComplete} = (\frac{\text{finishedDataMovement}\_{[1]}}{\text{totalDataToMove}\_{[2]}} \times 100)\text{%}
 $$
 
-##### Stopped
+[1] `finishedDataMovement` is the number of megabytes already moved by rebalance, provided by [/kafkacruisecontrol/state?substates=executor](#field-executorstate) REST API endpoint.
+  
+[2] `totalDataMovement` is the total number of megabytes planned to be moved for rebalance, provided from json payload of the [/kafkacruisecontrol/state?substates=executor](#field-executorstate) REST API endpoint.
+
+
+##### State `Stopped`
+
+$$
+\text{percentageDataMovementComplete} = \text{previousPercentageDataMovementComplete}
+$$
 
 Once a rebalance has been stopped, it cannot be resumed. 
 However, the `percentageDataMovementComplete` information from when before the rebalance was stopped may still be of value to users. 
 Therefore, we reuse the same value of `percentageDataMovementComplete` from the latest update.
 
-#### executorState
+#### Field: `executorState`
 
-##### Rebalancing
+The "non-verbose" JSON payload of the [/kafkacruisecontrol/state?substates=executor](https://github.com/linkedin/cruise-control/wiki/REST-APIs#query-the-state-of-cruise-control) endpoint of the Cruise Control REST API.
 
-The `executorState` field will be populated with the "non-verbose" JSON payload of the [/kafkacruisecontrol/state?substates=executor](https://github.com/linkedin/cruise-control/wiki/REST-APIs#query-the-state-of-cruise-control) endpoint of the Cruise Control REST API.
+For determining which fields are included for different executor states (`NO_TASK_IN_PROGRESS`, `STARTING_EXECUTION`, `INTER_BROKER_REPLICA_MOVEMENT_TASK_IN_PROGRESS` etc), refer to the code [here](https://github.com/linkedin/cruise-control/blob/2.5.141/cruise-control/src/main/java/com/linkedin/kafka/cruisecontrol/executor/ExecutorState.java#L427).
+For an exhaustive list of all the fields that could be included, see the Cruise Control’s OpenAPI spec [here](https://github.com/linkedin/cruise-control/blob/2.5.141/cruise-control/src/main/resources/yaml/responses/executorState.yaml)
 
 Example of the Executor State JSON payload during an inter-broker balance:
 ```json
@@ -175,15 +199,28 @@ Example of the Executor State JSON payload during an inter-broker balance:
   "triggeredUserTaskId": "0230d401-6a36-430e-9858-fac8f2edde93"
 }
 ```
-For determining which fields are included for different executor states (`NO_TASK_IN_PROGRESS`, `STARTING_EXECUTION`, `INTER_BROKER_REPLICA_MOVEMENT_TASK_IN_PROGRESS` etc) and whether the verbose parameter is provided or not, refer to the code [here](https://github.com/linkedin/cruise-control/blob/2.5.141/cruise-control/src/main/java/com/linkedin/kafka/cruisecontrol/executor/ExecutorState.java#L427).
 
-For an exhaustive list of all the fields that could be included, see the Cruise Control’s OpenAPI spec [here](https://github.com/linkedin/cruise-control/blob/2.5.141/cruise-control/src/main/resources/yaml/responses/executorState.yaml)
+The formulas used to calculate field value per  `KafkaRebalance`  state:
 
-##### Stopped
+##### State `Rebalancing`
+
+$$
+\text{executorState} = \text{jsonPayload}_{[1]}
+$$
+
+[1]  The "non-verbose" JSON payload of the [/kafkacruisecontrol/state?substates=executor](https://github.com/linkedin/cruise-control/wiki/REST-APIs#query-the-state-of-cruise-control) endpoint of the Cruise Control REST API.
+  
+
+##### State`Stopped`
+
+$$
+\text{executorState} = \text{previousJsonPayload}
+$$
 
 Once a rebalance has been stopped, it cannot be resumed.
 However, the `executorState` information from when before the rebalance was stopped may still be of value to users.
 Therefore, we reuse the same value of `executorState` from the latest update.
+
 
 ### Progress Update Cadence
 
@@ -238,67 +275,77 @@ However, providing an accurate estimation for this is non-trivial, namely the `e
 
 Leveraging the Cruise Control configurations and user-provided network capacity settings, we could provide a rough estimate for `estimatedTimeToCompletetion` field for inter-broker movements. 
 However, one challenge is coming up with a method of reliably determining a reasonable estimate for the disk read/write throughput. 
-It is not so much of an issue for inter-broker rebalance estimates (assuming network is the bottleneck for inter-broker balances) but is certainly an issue for intra-broker rebalance estimates. 
+It is not so much of an issue for inter-broker rebalance estimates (assuming network is the bottleneck for inter-broker balances) but is certainly an issue for intra-broker rebalance estimates.
 
-Estimation for inter-broker partition rebalance time:
+##### Field `estimatedTimeToCompletion`
 
-The maximum number of partition movements given CC partition movement cap
+###### State `ProposalReady`
 
-$$
-\text{maxPartitionMovements} = \min\text{numberOfBrokers} \times \text{num.concurrent.partition.movements.per.broker}),\text{max.num.cluster.partition.movements})
-$$
-
-The network bandwidth given CC bandwidth throttle
+**Estimation for inter-broker rebalance:**
 
 $$
-\text{bandwidth} = \min(\text{networkCapacity}, \text{replication.throttle})
+\text{maxPartitionMovements}_{[1]} = \min\text{numberOfBrokers} \times \text{num.concurrent.partition.movements.per.broker}),\text{max.num.cluster.partition.movements})
 $$
 
-The throughput given the max allowed number of partition movements and network bandwidth
+$$
+\text{bandwidth}_{[2]} = \min(\text{networkCapacity}, \text{replication.throttle})
+$$
 
 $$
-\text{throughput} = \text{maxPartitionMovements} \times \text{bandwidth}
+\text{throughput}_{[3]} = \text{maxPartitionMovements} \times \text{bandwidth}
 $$
 
 $$
 \text{estimatedTimeToCompletion} = \frac{\text{dataToMoveMB}}{\text{throughput}}
 $$
 
-However, without an estimate for disk read/write throughput, it is challenging to provide an accurate estimate for intra-broker rebalances but as mentioned above, getting disk throughput is non-trivial for Strimzi. 
+[1] The maximum number of partition movements given CC partition movement cap
+
+[2] The network bandwidth given CC bandwidth throttle
+
+[3] The throughput given the max allowed number of partition movements and network bandwidth
+
+**Estimation for intra-broker rebalance:**
+
+However, without an estimate for disk read/write throughput, it is challenging to provide an accurate estimate for intra-broker rebalances but as mentioned above, getting disk throughput is non-trivial for Strimzi.
 We would either need some estimation of the disk throughput, make it user configurable, or hardcode the value ourselves.
 
-The maximum number of partition movements given CC partition movement cap
-
 $$
-\text{maxPartitionMovements} = \min\left(\text{numberOfBrokers} \times \text{num.concurrent.intra.broker.partition.movements.per.broker}),\text{max.num.cluster.movements}\right)
+\text{maxPartitionMovements}_{[1]} = \min\left(\text{numberOfBrokers} \times \text{num.concurrent.intra.broker.partition.movements.per.broker}),\text{max.num.cluster.movements}\right)
 $$
-
+  
 $$
 \text{estimatedDiskThroughput} = \text{???}
 $$
 
-The throughput given the max allowed number of partition movements and disk throughput
-
 $$
-\text{throughput} = \text{maxPartitionMovements} \times \text{estimatedDiskThroughput}
+\text{throughput}_{[2]} = \text{maxPartitionMovements} \times \text{estimatedDiskThroughput}
 $$
-
+  
 $$
 \text{estimatedTimeToCompletion} = \frac{\text{intraBrokerDataToMoveMB}}{\text{throughput}}
 $$
 
+[1] The maximum number of partition movements given CC partition movement cap
 
+[2] The throughput given the max allowed number of partition movements and disk throughput
+
+  
 Given that its inclusion is not completely necessary and adds significant complexity to the proposal, it is out of scope for this proposal.
 
 ### Rejected Alternatives
 
-#### Including “ExecutorState” in KafkaRebalance resource status
+#### Maintaining progress fields in KafkaRebalance resource status
 
-Given that some of the information in the Executor State is not relevant to user driven partition rebalances (e.g. triggeredSelfHealingTaskId and triggeredTaskReason) and can be quite verbose (e.g. pendingPartitionMovement list), it is best if we take what we take the high level details we need from the ExecutorState and store the rest somewhere else. 
+Given that the progress information included in a `KafkaRebalance` resource: 
+- Contains information not relevant to user driven partition rebalances (e.g. triggeredSelfHealingTaskId and triggeredTaskReason)
+- Can be quite verbose (e.g. pendingPartitionMovement list)
+- Requires tracking a "last updated" timestamp and special logic in the rebalance operator to avoid trigger recursive operator reconciliations
+
+it is best if we maintain the progress information somewhere else. 
 
 #### Including “ExecutorState” in “afterBeforeLoadConfigmap”
 
 Keeping the ExecutorState in its own ConfigMap as opposed to storing it in the existing “afterBeforeLoadConfigMap” (1) leaves more room for Executor state information should we decide to enable “verbosity” parameter in the future and (2) leaves more room for the broker load information in the “afterBeforeLoadConfigMap”. 
 For smaller clusters, the space is not an issue but for larger production clusters with a larger number of brokers and partitions we run the risk of hitting the 1MB storage limit of the ConfigMap. 
 The cost of another ConfigMap is worth avoiding the risk of hitting the limit of the other.
-
