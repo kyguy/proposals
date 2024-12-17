@@ -163,7 +163,7 @@ $$
 [2] `totalDataMovement` is the total number of megabytes planned to be moved for rebalance, provided from json payload of the [/kafkacruisecontrol/state?substates=executor](#field-executorstate) REST API endpoint.
 
 
-##### State `Stopped`
+##### State: `Stopped`
 
 $$
 \text{percentageDataMovementComplete} = \text{previousPercentageDataMovementComplete}
@@ -202,7 +202,7 @@ Example of the Executor State JSON payload during an inter-broker balance:
 
 The formulas used to calculate field value per  `KafkaRebalance`  state:
 
-##### State `Rebalancing`
+##### State: `Rebalancing`
 
 $$
 \text{executorState} = \text{jsonPayload}_{[1]}
@@ -211,7 +211,7 @@ $$
 [1]  The "non-verbose" JSON payload of the [/kafkacruisecontrol/state?substates=executor](https://github.com/linkedin/cruise-control/wiki/REST-APIs#query-the-state-of-cruise-control) endpoint of the Cruise Control REST API.
   
 
-##### State`Stopped`
+##### State:`Stopped`
 
 $$
 \text{executorState} = \text{previousJsonPayload}
@@ -279,7 +279,7 @@ It is not so much of an issue for inter-broker rebalance estimates (assuming net
 
 ##### Field `estimatedTimeToCompletion`
 
-###### State `ProposalReady`
+###### State: `ProposalReady`
 
 **Estimation for inter-broker rebalance:**
 
